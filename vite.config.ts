@@ -5,6 +5,10 @@ import viteCompression from 'vite-plugin-compression'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  server: {
+    host: true, // 监听所有地址，包括 LAN 和公共地址
+    port: 5173, // 默认端口
+  },
   plugins: [vue(),
   viteImagemin({
     gifsicle: { optimizationLevel: 3 },
