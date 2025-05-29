@@ -32,6 +32,7 @@
 import { ref, reactive, onMounted, onBeforeUnmount, markRaw, shallowRef } from "vue";
 import Dashboard from "./view/Dashboard.vue";
 import Settings from "./view/Setting.vue";
+import { webSocketClient } from "./common";
 
 const currentPage = shallowRef(markRaw(Dashboard));
 const currentTab = ref('att');// 当前选中的标签页
@@ -86,6 +87,12 @@ async function keepScreenAwake() {
 onMounted(() => {
   // 初始化屏幕常亮和全屏
   keepScreenAwake();
+
+  // 初始化WebSocket连接
+  // 使用默认URL，也可以从本地存储中获取
+  webSocketClient.setUrl('ws://192.168.101.107:81');
+  webSocketClient.connect();
+  console.log('WebSocket连接已初始化');
 });
 
 // 组件卸载时
@@ -97,6 +104,9 @@ onBeforeUnmount(() => {
     });
   }
 
+  // 断开WebSocket连接
+  webSocketClient.disconnect();
+  console.log('WebSocket连接已断开');
 });
 
 
@@ -105,11 +115,12 @@ onBeforeUnmount(() => {
 <style>
 body,
 .fullscreen-layout {
-  width: 100vw;
-  height: 100vh;
+  /* width: 100vw; */
+  /* height: 100vh; */
+  min-height: 100vh;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  /* overflow: hidden; */
   /* background: #000; */
   display: flex;
   flex-direction: column;
