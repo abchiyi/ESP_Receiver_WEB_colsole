@@ -1,7 +1,3 @@
-export enum PORT {
-    PORT_CONFIG = 0
-}
-
 export enum DataOperation {
     READ,
     WRITE,
