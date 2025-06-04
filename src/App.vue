@@ -55,8 +55,8 @@ const currentPage = shallowRef(markRaw(Dashboard));
 const currentTab = ref('att');// 当前选中的标签页
 
 // 处理导航菜单切换
-function handleMenuChange(value: string) {
-  currentTab.value = value;
+function handleMenuChange(value: string | number) {
+  currentTab.value = String(value);
 
   switch (value) {
     case 'att':

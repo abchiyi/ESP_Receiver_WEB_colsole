@@ -2,19 +2,32 @@
   <div class="setting">
     <t-space direction="vertical" size="large" style="width: 100%">
       <!-- WiFi配置部分 -->
-      <t-card title="WiFi 配置" :bordered="false" class="config-card">
-        <t-form ref="form" :data="wifiConfig" :rules="rules" @submit="onSubmit">
+      <t-card title="配置" :bordered="false" class="config-card">
+        <t-form ref="form" :data="Config" :rules="rules" @submit="onSubmit">
           <t-form-item label="SSID" name="ssid">
-            <t-input v-model="wifiConfig.ssid" :placeholder="wifiConfig.ssid" />
+            <t-input v-model="Config.ssid" :placeholder="Config.ssid" />
           </t-form-item>
 
           <t-form-item label="PASS" name="password">
-            <t-input v-model="wifiConfig.password" :placeholder="wifiConfig.password" />
+            <t-input v-model="Config.password" :placeholder="Config.password" />
+          </t-form-item>
+
+          <t-form-item label="控制模式" name="control_mode">
+            <t-radio-group v-model="Config.control_mode">
+              <t-radio :value="0">从机模式 (Slave)</t-radio>
+              <t-radio :value="1">主机模式 (Master)</t-radio>
+            </t-radio-group>
+          </t-form-item>
+
+          <t-form-item label="无线模式" name="radio_mode">
+            <t-select v-model="Config.radio_mode">
+              <t-option :value="radio_mode.ESP_NOW" label="ESP-NOW" />
+            </t-select>
           </t-form-item>
 
           <t-form-item>
             <t-space>
-              <t-button theme="primary" type="submit" :disabled="!isConnected || !wifiConfig.ssid">
+              <t-button theme="primary" type="submit" :disabled="!isConnected || !Config.ssid">
                 发送配置
               </t-button>
             </t-space>
@@ -29,8 +42,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue';
-import { MessagePlugin } from 'tdesign-vue-next';
+import { MessagePlugin, Select as TSelect, Option as TOption } from 'tdesign-vue-next';
 import { DataOperation, DataPort, webSocketClient } from '../common';
+
+
+enum radio_mode {
+  ESP_NOW,
+  __radio_mode_max
+}
 
 // 使用全局WebSocketClient实例
 const wsClient = webSocketClient;
@@ -41,20 +60,23 @@ const form = ref();
 // 响应式状态
 const isConnected = ref(false);
 
-// WiFi配置状态
-const wifiConfig = reactive({
+// 设备配置状态
+const Config = reactive({
   ssid: '',
   password: '',
+  control_mode: 0, // 0: slave模式, 1: master模式
+  radio_mode: radio_mode.ESP_NOW, // 默认使用ESP_NOW模式
 });
+
+import type { FormRule, SubmitContext } from 'tdesign-vue-next';
 
 // 表单验证规则
 const rules = {
   ssid: [
-    { required: true, message: '请输入WiFi名称', type: 'error' },
-    { min: 1, max: 32, message: 'WiFi名称长度应在1-32个字符之间', type: 'warning' }
-  ]
+    { required: true, message: '请输入WiFi名称', type: 'error' as const },
+    { min: 1, max: 32, message: 'WiFi名称长度应在1-32个字符之间', type: 'warning' as const }
+  ] as FormRule[]
 };
-
 
 // 更新连接状态
 const updateConnectionStatus = () => {
@@ -63,29 +85,31 @@ const updateConnectionStatus = () => {
 
 
 // 表单提交处理
-const onSubmit = ({ validateResult }: { validateResult: boolean }) => {
-  if (validateResult === true)
-    connectToWifi();
+const onSubmit = (context: any) => {
+  if (context.validateResult === true)
+    saveConfig();
 }
 
-// 连接WiFi
-const connectToWifi = () => {
+// 保存设备配置
+const saveConfig = () => {
   // 验证连接状态
   if (!wsClient.isConnected()) {
     MessagePlugin.warning("设备未连接...");
     return;
   }
 
-  // 准备WiFi配置消息
-  const wifiConfigMessage = {
+  // 准备设备配置消息
+  const configMessage = {
     port: DataPort.WEB_PORT_CONFIG,
     rw: DataOperation.WRITE,
-    ssid: wifiConfig.ssid,
-    pass: wifiConfig.password,
+    ssid: Config.ssid,
+    pass: Config.password,
+    control_mode: Config.control_mode,
+    radio_mode: Config.radio_mode,
   };
 
-  // 发送WiFi配置到ESP32
-  wsClient.send(wifiConfigMessage);
+  // 发送配置到ESP32
+  wsClient.send(configMessage);
 };
 
 
@@ -107,12 +131,16 @@ onMounted(() => {
       const messageStr = typeof data === 'object' ? JSON.stringify(data) : data.toString();
       const jsonData = JSON.parse(messageStr);
 
+
+      console.log(data);
       // 验证数据格式
       if (typeof jsonData === 'object' && jsonData !== null) {
         if (jsonData.ssid && jsonData.pass) {
-          wifiConfig.ssid = jsonData.ssid;
-          wifiConfig.password = jsonData.pass;
-          MessagePlugin.success('WiFi配置已更新');
+          Config.ssid = jsonData.ssid;
+          Config.password = jsonData.pass;
+          Config.control_mode = jsonData.control_mode !== undefined ? jsonData.control_mode : 0; // 如果control_mode未定义，默认为slave模式(0)
+          Config.radio_mode = jsonData.radio_mode !== undefined ? jsonData.radio_mode : radio_mode.ESP_NOW; // 如果radio_mode未定义，默认为ESP_NOW模式
+          MessagePlugin.success('设备配置已更新');
         }
       }
     } catch (error) {
@@ -127,6 +155,13 @@ onMounted(() => {
     rw: DataOperation.READ,
   };
   wsClient.send(requestData);
+
+  // 延迟一秒后检查是否收到了mode值，如果没有则再次请求
+  setTimeout(() => {
+    if (Config.control_mode === undefined) {
+      wsClient.send(requestData);
+    }
+  }, 1000);
 
   // 初始状态更新
   updateConnectionStatus();
