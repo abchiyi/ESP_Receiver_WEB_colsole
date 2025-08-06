@@ -23,6 +23,7 @@ declare module 'vue' {
     TRadio: typeof import('tdesign-vue-next')['Radio']
     TRadioGroup: typeof import('tdesign-vue-next')['RadioGroup']
     TSpace: typeof import('tdesign-vue-next')['Space']
+    TSwitch: typeof import('tdesign-vue-next')['Switch']
     TTooltip: typeof import('tdesign-vue-next')['Tooltip']
   }
 }
