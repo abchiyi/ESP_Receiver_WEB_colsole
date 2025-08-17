@@ -20,9 +20,7 @@
           </t-form-item>
 
           <t-form-item label="无线模式" name="radio_mode">
-            <t-select v-model="Config.radio_mode">
-              <t-option :value="radio_mode.ESP_NOW" label="ESP-NOW" />
-            </t-select>
+            <t-select v-model="Config.radio_mode" :options="getRadioModeOptions()" />
           </t-form-item>
 
           <t-form-item label="ROLL" name="ROLL">
@@ -97,6 +95,7 @@ import { DataOperation, DataPort, webSocketClient } from '../common';
 // 无线模式枚举
 enum radio_mode {
   ESP_NOW,
+  BT_CONTROLLER,
   __radio_mode_max
 }
 
@@ -209,6 +208,17 @@ const getJoyInputOptions = () => {
     .filter(key => typeof XBOX_INPUT[key as keyof typeof XBOX_INPUT] === 'number'
       && ['None', 'joyLHori', 'joyLVert', 'joyRHori', 'joyRVert', 'trigLT', 'trigRT'].includes(key))
     .map(key => ({ label: axisLabels[key] || key, value: XBOX_INPUT[key as keyof typeof XBOX_INPUT] }));
+};
+
+const getRadioModeOptions = () => {
+  const modeLabels: Record<string, string> = {
+    'ESP_NOW': 'ESP-NOW'
+  };
+
+  return Object.keys(radio_mode)
+    .filter(key => typeof radio_mode[key as keyof typeof radio_mode] === 'number'
+      && key !== '__radio_mode_max')
+    .map(key => ({ label: modeLabels[key] || key, value: radio_mode[key as keyof typeof radio_mode] }));
 };
 
 // 表单验证规则
