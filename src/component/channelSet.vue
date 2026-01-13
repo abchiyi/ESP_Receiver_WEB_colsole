@@ -10,8 +10,8 @@
             <t-form layout="vertical" label-width="80px">
 
                 <t-form-item v-if="useBtGamepad" label="输入源">
-                    <t-select v-model="channel.inputSource" :options="inputOptions" placeholder="选择手柄按钮/摇杆" size="small"
-                        @change="(v) => updateField({ inputSource: v as any })" />
+                    <t-select v-model="channel.xbox_input_key" :options="getXboxInputOptions()" placeholder="选择手柄按钮/摇杆"
+                        size="small" @change="(v) => updateField({ xbox_input_key: v as any })" />
                 </t-form-item>
 
                 <t-form-item label="范围">
@@ -58,14 +58,12 @@ type ChannelSetting = {
     max: number;
     reverse: boolean;
     offset: number;
-    inputSource?: string | number; // 额外输入源标识（如 BT 按钮/摇杆）
+    xbox_input_key: number;
 };
 
 const props = defineProps<{
     modelValue?: ChannelSetting;
-    title?: string;
     useBtGamepad?: boolean; // 为 BT 手柄输入时展示额外选项
-    btOptions?: { label: string; value: string | number }[]; // BT 按钮/摇杆列表
 }>();
 
 const emit = defineEmits<{
@@ -79,7 +77,8 @@ const defaultChannel: ChannelSetting = {
     center: 1500,
     max: 2000,
     reverse: false,
-    offset: 0
+    offset: 0,
+    xbox_input_key: 0
 };
 
 // Xbox输入按钮枚举
@@ -113,11 +112,6 @@ enum XBOX_INPUT {
 
 
 const channel = ref<ChannelSetting>(cloneChannel(props.modelValue || defaultChannel));
-
-const inputOptions =
-    computed(() => props.btOptions && props.btOptions.length > 0
-        ? props.btOptions
-        : getXboxInputOptions());
 
 watch(
     () => props.modelValue,

@@ -2,24 +2,24 @@
   <div class="setting">
 
     <t-card title="监控" class="chart-card">
-      <Waveform :values="channelOutputs" :height="240" :stacked="false" />
+      <Waveform :values="receiverInfo.channel_outputs" :height="240" :stacked="false" />
     </t-card>
 
     <t-row :gutter="[16, 16]" class="layout-row with-gap">
 
 
-      <!-- <t-col v-for="channel in channelSettings" :key="channel.id" :xs="12" :sm="6" :lg="4" class="card-col">
-        <channel-set :title="`通道 ${channel.name}`" :model-value="channel"
-          @update:modelValue="(val) => updateChannel(val.id, val)" @save="handleChannelSave" />
-      </t-col> -->
+      <t-col v-for="channel in config.channel_settings" :key="channel.id" :xs="12" :sm="6" :lg="4" class="card-col">
+        <channel-set :model-value="channel" :use-bt-gamepad="config.radio_mode == radio_mode.BT_CONTROLLER"
+          @update:modelValue="(val) => updateChannel(val.id, val)" />
+      </t-col>
 
 
       <t-col :xs="12" :sm="6" :lg="4" class="card-col">
         <t-card title="通信设置">
-          <t-form layout="vertical" label-width="100px" :model="Config" ref="form">
+          <t-form layout="vertical" label-width="100px" :model="config" ref="form">
 
             <t-form-item label="无线模式" name="radio_mode">
-              <t-select v-model="Config.radio_mode" size="small" :options="getRadioModeOptions()" />
+              <t-select v-model="config.radio_mode" size="small" :options="getRadioModeOptions()" />
             </t-form-item>
 
           </t-form>
@@ -49,10 +49,14 @@ import { DataOperation, webSocketClient as wsClient } from '../common';
 import ChannelSet from '../component/channelSet.vue';
 import Waveform from '../component/Waveform.vue';
 
+//==============================================
+// 类似&枚举常量声明
+//==============================================
+
 // 通道数量常量
 const CHANNEL_COUNT = 4;
 
-// 通道基本配置类型
+// 接收机通道基本配置结构
 type ChannelSetting = {
   id: number; // 通道ID
   name: string; // 通道别名
@@ -60,17 +64,18 @@ type ChannelSetting = {
   center: number; // 中值脉宽
   max: number; // 最大值脉宽
   reverse: boolean; // true表示反向 ，反向raw值
+  offset: number; // pwm中位偏移值
   xbox_input_key: number; // Xbox输入键映射,如果设备处于蓝牙手柄模式
 };
 
 
-
+// 接收机状态信息
 type receiverInfo = {
   rssi_ground: number; // 地面RSSI值
   rssi_air: number; // 空中RSSI值
   battery_voltage: number; // 电池电压
   firmware_version: string; // 固件版本
-  channel_outputs: [number]; // 通道输出值数组
+  channel_outputs: [number, number, number, number]; // 通道输出值数组
 };
 
 type configData = {
@@ -88,19 +93,30 @@ enum DataPort {
 
 // 无线模式枚举
 enum radio_mode {
-  ESP_NOW,
+  ESP_NOW = 0,
   BT_CONTROLLER,
   __radio_mode_max
 }
 
-// 设备配置
-const Config = reactive({
-  radio_mode: radio_mode.ESP_NOW, // 默认使用ESP_NOW模式
+//==============================================
+// 变量&对象声明
+//==============================================
+
+// 配置对象用于在WEB APP 和接收机之间同步配置
+const config: configData = reactive({
+  radio_mode: radio_mode.ESP_NOW,
+  channel_settings: buildDefaultChannels(),
 });
 
 
-const channelOutputs = ref<number[]>([1500, 1500, 1500, 1500]); // 通道输出值数组初始化为1500
-
+// 信息展示对象,服务于基本参数卡片和波形图
+const receiverInfo = reactive<receiverInfo>({
+  rssi_ground: -99,
+  rssi_air: -99,
+  battery_voltage: 0,
+  firmware_version: '--',
+  channel_outputs: [1500, 1500, 1500, 1500],
+});
 
 
 // TODO 修改为计算属性
@@ -153,6 +169,42 @@ onMounted(() => {
 
 
 
+const updateChannel = (id: number, val: Partial<ChannelSetting>) => {
+  const idx = config.channel_settings.findIndex(c => c.id === id);
+  if (idx < 0) return;
+
+  console.log('更新通道设置:', id, val);
+
+  const prev = config.channel_settings[idx];
+  const merged: ChannelSetting = {
+    id: prev.id,
+    name: val.name ?? prev.name,
+    min: val.min ?? prev.min,
+    center: val.center ?? prev.center,
+    max: val.max ?? prev.max,
+    reverse: val.reverse ?? prev.reverse,
+    offset: val.offset ?? prev.offset ?? 0, // 补齐缺失的 offset
+    xbox_input_key: val.xbox_input_key ?? prev.xbox_input_key,
+  };
+
+  // 保持响应性
+  config.channel_settings.splice(idx, 1, merged);
+};
+
+/**
+ * 构建默认通道设置数组。
+ *
+ * 根据全局常量 CHANNEL_COUNT 生成 CHANNEL_COUNT 个 ChannelSetting 对象，
+ * 每个对象包含以下默认值：
+ * - id: 从 0 开始递增的通道索引
+ * - name: "CH" + (id + 1)
+ * - min: 1000
+ * - center: 1500
+ * - max: 2000
+ * - reverse: false
+ * - xbox_input_key: 0
+ * @returns {ChannelSetting[]} 包含默认通道设置的数组，长度为 CHANNEL_COUNT。
+ */
 function buildDefaultChannels(): ChannelSetting[] {
   const channels: ChannelSetting[] = [];
   for (let i = 0; i < CHANNEL_COUNT; i++) {
@@ -163,7 +215,8 @@ function buildDefaultChannels(): ChannelSetting[] {
       center: 1500,
       max: 2000,
       reverse: false,
-      xbox_input_key: 0
+      xbox_input_key: 0,
+      offset: 0,
     });
   }
   return channels;
