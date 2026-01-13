@@ -7,22 +7,45 @@
       </div>
       <Waveform :values="channelOutputs" :height="240" :stacked="false" />
     </t-card>
+
     <t-row :gutter="[16, 16]" class="layout-row with-gap">
-      <t-col :xs="12" :sm="6" :lg="4" class="card-col">
-        <t-card title="基本参数"></t-card>
-      </t-col>
-      <t-col :xs="12" :sm="6" :lg="4" class="card-col">
-        <t-card title="通信设置"></t-card>
-      </t-col>
-    </t-row>
 
 
-
-    <t-row :gutter="[16, 16]" class="channel-row with-gap">
       <t-col v-for="channel in channelSettings" :key="channel.id" :xs="12" :sm="6" :lg="4" class="card-col">
         <channel-set :title="`通道 ${channel.name}`" :model-value="channel"
           @update:modelValue="(val) => updateChannel(val.id, val)" @save="handleChannelSave" />
       </t-col>
+
+
+      <t-col :xs="12" :sm="6" :lg="4" class="card-col">
+        <t-card title="通信设置">
+          <p><span></span></p>
+          <t-form layout="vertical" label-width="100px" :model="Config" :rules="rules" ref="form" @submit="onSubmit">
+
+            <t-form-item label="无线模式" name="radio_mode">
+              <t-select v-model="Config.radio_mode" size="small" :options="getRadioModeOptions()" />
+            </t-form-item>
+
+            <t-form-item>
+              <t-button type="submit" theme="primary">保存配置</t-button>
+            </t-form-item>
+
+          </t-form>
+        </t-card>
+      </t-col>
+
+      <t-col :xs="12" :sm="6" :lg="4" class="card-col">
+        <t-card title="基本参数">
+          <p>RC Mini C34B</p>
+          <p>固件版本 0.1B</p>
+          <p>电池串数 1S</p>
+          <p>电池电压 3.7V</p>
+          <p>RSSI 地面：-20db [良好]</p>
+          <p>RSSI 空中：-30db [良好]</p>
+        </t-card>
+      </t-col>
+
+
     </t-row>
   </div>
 </template>
