@@ -1,8 +1,3 @@
-export enum DataOperation {
-    READ,
-    WRITE,
-}
-
 export class WebSocketClient {
     private ws: WebSocket | null = null;
     private readonly url: string;

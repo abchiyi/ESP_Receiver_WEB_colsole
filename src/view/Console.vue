@@ -39,13 +39,27 @@
 
 
     </t-row>
+
+    <!-- 悬浮操作按钮 -->
+    <div class="float-actions">
+      <t-button shape="circle" theme="primary" size="large" @click="handleSync" title="从设备同步">
+        <template #icon>
+          <t-icon name="refresh" />
+        </template>
+      </t-button>
+      <t-button shape="circle" theme="success" size="large" @click="handleSave" title="保存到设备">
+        <template #icon>
+          <t-icon name="check" />
+        </template>
+      </t-button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, reactive, watch, onBeforeUnmount } from 'vue';
 import { MessagePlugin, Select as TSelect, Option as TOption } from 'tdesign-vue-next';
-import { DataOperation, webSocketClient as wsClient } from '../common';
+import { webSocketClient as wsClient } from '../common';
 import ChannelSet from '../component/channelSet.vue';
 import Waveform from '../component/Waveform.vue';
 
@@ -119,6 +133,10 @@ const receiverInfo = reactive<receiverInfo>({
 });
 
 
+//==============================================
+// 方法函数声明
+//==============================================
+
 // TODO 修改为计算属性
 const getRadioModeOptions = () => {
   const modeLabels: Record<string, string> = {
@@ -140,6 +158,48 @@ function onMessage(data: any) {
     const jsonData = JSON.parse(messageStr);
 
 
+    /**
+     * * 处理配置和通道同步数据
+     */
+    if (jsonData.port === DataPort.PORT_CONFIG_AND_CHANNEL_SYNC) {
+      // 处理配置和通道同步数据
+      if (typeof jsonData.config === 'object' && jsonData.config !== null) {
+        // 更新配置数据
+        if (typeof jsonData.config.radio_mode === 'number') {
+          config.radio_mode = jsonData.config.radio_mode;
+        }
+        if (Array.isArray(jsonData.config.channel_settings)) {
+          // 简单替换通道设置数组
+          config.channel_settings = jsonData.config.channel_settings;
+        }
+      }
+
+      /**
+      * * 处理接收机信息数据
+       */
+      if (typeof jsonData.receiver_info === 'object'
+        && jsonData.receiver_info !== null) {
+
+        const info = jsonData.receiver_info;
+        if (typeof info.rssi_ground === 'number') {
+          receiverInfo.rssi_ground = info.rssi_ground;
+        }
+        if (typeof info.rssi_air === 'number') {
+          receiverInfo.rssi_air = info.rssi_air;
+        }
+        if (typeof info.battery_voltage === 'number') {
+          receiverInfo.battery_voltage = info.battery_voltage;
+        }
+        if (typeof info.firmware_version === 'string') {
+          receiverInfo.firmware_version = info.firmware_version;
+        }
+        if (Array.isArray(info.channel_outputs) && info.channel_outputs.length === CHANNEL_COUNT) {
+          receiverInfo.channel_outputs = info.channel_outputs as [number, number, number, number];
+
+        }
+      }
+    }
+
     // XXX 打印收到的数据
     console.log(data);
 
@@ -153,20 +213,51 @@ function onMessage(data: any) {
   }
 }
 
-onMounted(() => {
-  // 设置事件监听器
-  wsClient.onConnected(() => {
-    MessagePlugin.success('WebSocket 已连接');
-  });
 
-  wsClient.onDisconnected(() => {
-    MessagePlugin.warning('WebSocket 已断开连接');
-  });
-
-  wsClient.onMessage(onMessage); // 注册消息监听器
-
-});
-
+/**
+ * 同步设备配置数据
+ *
+ * 该函数用于在主机和设备之间同步配置数据。支持两种模式：
+ * 1. APP向设备发送配置 (to_device = true)
+ * 2. APP从设备请求配置 (to_device = false)
+ *
+ * @param {boolean} [to_device=true] - 同步方向标志
+ *   - true: 将当前配置发送到设备端
+ *   - false: 从设备端请求最新配置
+ *
+ * @returns {void}
+ *
+ * @example
+ * // 向设备发送配置
+ * SYNC_DEVICE_DATA(true);
+ *
+ * @example
+ * // 从设备请求配置
+ * SYNC_DEVICE_DATA(false);
+ *
+ * @remarks
+ * - 依赖全局 wsClient WebSocket 客户端实例
+ * - 依赖全局 config 配置对象
+ * - 依赖 DataPort.PORT_CONFIG_SYNC 端口定义
+ * - 发送的数据格式为 JSON 字符串
+ */
+function SYNC_DEVICE_DATA(to_device: boolean = true) {
+  if (to_device) {
+    const payload = {
+      port: DataPort.PORT_CONFIG_SYNC,
+      config: config,
+    };
+    wsClient.send(JSON.stringify(payload));
+    console.log('发送配置同步数据到设备:', payload);
+  } else {
+    const payload = {
+      port: DataPort.PORT_CONFIG_SYNC,
+      request: 'sync',
+    };
+    wsClient.send(JSON.stringify(payload));
+    console.log('请求从设备同步配置数据:', payload);
+  }
+}
 
 
 const updateChannel = (id: number, val: Partial<ChannelSetting>) => {
@@ -190,6 +281,41 @@ const updateChannel = (id: number, val: Partial<ChannelSetting>) => {
   // 保持响应性
   config.channel_settings.splice(idx, 1, merged);
 };
+
+// 处理同步按钮点击
+const handleSync = () => {
+  SYNC_DEVICE_DATA(false);
+  MessagePlugin.info('正在从设备同步配置...');
+};
+
+// 处理保存按钮点击
+const handleSave = () => {
+  SYNC_DEVICE_DATA(true);
+  MessagePlugin.success('配置已发送到设备');
+};
+
+
+
+
+// ==============================================
+// 生命周期钩子
+// ==============================================
+onMounted(() => {
+  // 设置事件监听器
+  wsClient.onConnected(() => {
+    MessagePlugin.success('WebSocket 已连接');
+  });
+
+  wsClient.onDisconnected(() => {
+    MessagePlugin.warning('WebSocket 已断开连接');
+  });
+
+  wsClient.onMessage(onMessage); // 注册消息监听器
+
+  SYNC_DEVICE_DATA(false); // 连接后立即同步数据
+
+});
+
 
 /**
  * 构建默认通道设置数组。
@@ -336,5 +462,33 @@ function buildDefaultChannels(): ChannelSetting[] {
   font-size: 14px;
   color: var(--td-text-color-secondary);
   margin: 0;
+}
+
+/* 悬浮操作按钮 */
+.float-actions {
+  position: fixed;
+  right: 32px;
+  bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 1000;
+}
+
+.float-actions .t-button {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+.float-actions .t-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+@media (max-width: 768px) {
+  .float-actions {
+    right: 16px;
+    bottom: 16px;
+  }
 }
 </style>
