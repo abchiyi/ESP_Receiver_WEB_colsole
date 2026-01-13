@@ -3,11 +3,6 @@ export enum DataOperation {
     WRITE,
 }
 
-export enum DataPort {
-    WEB_PORT_CONFIG, // 配置端口
-    __PORT_MAX,      // 端口最大值,仅作为占位符
-};
-
 export class WebSocketClient {
     private ws: WebSocket | null = null;
     private readonly url: string;
