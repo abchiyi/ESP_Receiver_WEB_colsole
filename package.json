@@ -27,5 +27,9 @@
     "vite-plugin-compression": "^0.5.1",
     "vue-tsc": "^2.0.10"
   },
-  "description": "Base on tdesign-starter-cli"
+  "description": "Base on tdesign-starter-cli",
+  "main": "index.js",
+  "repository": "https://github.com/abchiyi/ESP_Receiver_WEB_colsole.git",
+  "author": "abchiyi <meme_me2019@outlook.com>",
+  "license": "MIT"
 }

@@ -1,47 +1,53 @@
 <template>
-  <t-layout ref="layout" class="fullscreen-layout">
-    <!-- 导航栏 -->
-    <t-header class="nav-header" :style="getNavHeaderStyle">
-      <div class="header-container">
-        <t-head-menu theme="dark" :value="currentTab" @change="handleMenuChange" class="nav-menu">
-          <t-menu-item value="att" class="nav-item">
-            <template #icon>
-              <t-icon name="dashboard" />
+  <div class="app-shell">
+    <div class="floating-bg">
+      <canvas ref="bgCanvas" class="floating-canvas"></canvas>
+    </div>
+
+    <t-layout ref="layout" class="fullscreen-layout">
+      <!-- 导航栏 -->
+      <t-header class="nav-header" :style="getNavHeaderStyle">
+        <div class="header-container">
+          <t-head-menu theme="dark" :value="currentTab" @change="handleMenuChange" class="nav-menu">
+            <t-menu-item value="att" class="nav-item">
+              <template #icon>
+                <t-icon name="dashboard" />
+              </template>
+              仪表
+            </t-menu-item>
+            <t-menu-item value="settings" class="nav-item">
+              <template #icon>
+                <t-icon name="setting" />
+              </template>
+              设置
+            </t-menu-item>
+
+
+            <template #operations>
+              <div class="ws-status-container">
+                <t-tooltip :content="wsStatus.message" :theme="wsStatus.theme" placement="bottom">
+                  <div class="ws-status-indicator" :style="{ backgroundColor: wsStatus.iconColor }"></div>
+                </t-tooltip>
+                <t-input-adornment prepend="ws://">
+                  <t-input clearable v-model="wsAddress" placeholder="WebSocket地址" :status="wsStatus.type"
+                    @blur="updateWsAddress" />
+                </t-input-adornment>
+              </div>
             </template>
-            仪表
-          </t-menu-item>
-          <t-menu-item value="settings" class="nav-item">
-            <template #icon>
-              <t-icon name="setting" />
-            </template>
-            设置
-          </t-menu-item>
 
+          </t-head-menu>
+        </div>
+      </t-header>
 
-          <template #operations>
-            <div class="ws-status-container">
-              <t-tooltip :content="wsStatus.message" :theme="wsStatus.theme" placement="bottom">
-                <div class="ws-status-indicator" :style="{ backgroundColor: wsStatus.iconColor }"></div>
-              </t-tooltip>
-              <t-input-adornment prepend="ws://">
-                <t-input clearable v-model="wsAddress" placeholder="WebSocket地址" :status="wsStatus.type"
-                  @blur="updateWsAddress" />
-              </t-input-adornment>
-            </div>
-          </template>
-
-        </t-head-menu>
-      </div>
-    </t-header>
-
-    <!-- 内容区域 -->
-    <t-content class="fullscreen-content">
-      <!-- 使用transition组件添加过渡效果 -->
-      <transition name="fade" mode="out-in">
-        <component :is="currentPage" v-if="currentPage" />
-      </transition>
-    </t-content>
-  </t-layout>
+      <!-- 内容区域 -->
+      <t-content class="fullscreen-content">
+        <!-- 使用transition组件添加过渡效果 -->
+        <transition name="fade" mode="out-in">
+          <component :is="currentPage" v-if="currentPage" />
+        </transition>
+      </t-content>
+    </t-layout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -50,6 +56,23 @@ import { ref, reactive, onMounted, onBeforeUnmount, markRaw, shallowRef, compute
 import Dashboard from "./view/Dashboard.vue";
 import Settings from "./view/Setting.vue";
 import { webSocketClient } from "./common";
+
+type ShapeKind = "circle" | "rounded-rect" | "capsule";
+
+type FloatingShape = {
+  kind: ShapeKind;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  radius: number;
+  vx: number;
+  vy: number;
+  rotation: number;
+  vr: number;
+  color: string;
+  opacity: number;
+};
 
 const currentPage = shallowRef(markRaw(Dashboard));
 const currentTab = ref('att');// 当前选中的标签页
@@ -71,6 +94,17 @@ function handleMenuChange(value: string | number) {
 
 // 全屏元素引用
 const layout = ref<HTMLElement | null>(null);
+const bgCanvas = ref<HTMLCanvasElement | null>(null);
+const animationId = ref<number | null>(null);
+const shapes = ref<FloatingShape[]>([]);
+const viewSize = reactive({ width: window.innerWidth, height: window.innerHeight });
+const palette = [
+  "#7ad7f0",
+  "#7bdcb5",
+  "#f7e08d",
+  "#f9c784",
+  "#c4b1d4"
+];
 
 // WebSocket地址和状态
 const wsAddress = ref('');
@@ -174,6 +208,9 @@ const updateWsAddress = () => {
 
 // 组件挂载时
 onMounted(() => {
+  initFloatingShapes();
+  window.addEventListener('resize', handleResize);
+
   // 初始化WebSocket连接
   const savedAddress = localStorage.getItem('wsAddress');
   wsAddress.value = savedAddress || getDefaultWsAddress();
@@ -203,6 +240,11 @@ onMounted(() => {
 
 // 组件卸载时
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize);
+  if (animationId.value !== null) {
+    cancelAnimationFrame(animationId.value);
+  }
+
   // 断开WebSocket连接
   webSocketClient.disconnect();
   console.log('WebSocket连接已断开');
@@ -231,6 +273,162 @@ const getNavHeaderStyle = computed(() => {
   return { backgroundColor };
 });
 
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const handleResize = () => {
+  viewSize.width = window.innerWidth;
+  viewSize.height = window.innerHeight;
+  setupCanvas();
+  shapes.value.forEach((shape) => {
+    const halfW = shape.width / 2;
+    const halfH = shape.height / 2;
+    shape.x = clamp(shape.x, halfW, viewSize.width - halfW);
+    shape.y = clamp(shape.y, halfH, viewSize.height - halfH);
+  });
+};
+
+const initFloatingShapes = () => {
+  setupCanvas();
+  shapes.value = buildShapes(18);
+  startAnimation();
+};
+
+const setupCanvas = () => {
+  const canvas = bgCanvas.value;
+  if (!canvas) return;
+  const ratio = window.devicePixelRatio || 1;
+  const width = viewSize.width;
+  const height = viewSize.height;
+  canvas.width = width * ratio;
+  canvas.height = height * ratio;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+};
+
+const buildShapes = (count: number): FloatingShape[] => {
+  const shapesList: FloatingShape[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const kind = pickShapeKind();
+    const width = 60 + Math.random() * 120;
+    const height = kind === "circle" ? width : 40 + Math.random() * 80;
+    const radius = Math.min(24 + Math.random() * 32, width / 2, height / 2);
+    shapesList.push({
+      kind,
+      width,
+      height,
+      radius,
+      x: Math.random() * viewSize.width,
+      y: Math.random() * viewSize.height,
+      vx: (Math.random() * 0.8 + 0.2) * (Math.random() > 0.5 ? 1 : -1),
+      vy: (Math.random() * 0.8 + 0.2) * (Math.random() > 0.5 ? 1 : -1),
+      rotation: Math.random() * Math.PI,
+      vr: (Math.random() * 0.003 + 0.001) * (Math.random() > 0.5 ? 1 : -1),
+      color: palette[Math.floor(Math.random() * palette.length)],
+      opacity: 0.08 + Math.random() * 0.08
+    });
+  }
+  return shapesList;
+};
+
+const pickShapeKind = (): ShapeKind => {
+  const rand = Math.random();
+  if (rand < 0.34) return "circle";
+  if (rand < 0.67) return "rounded-rect";
+  return "capsule";
+};
+
+const startAnimation = () => {
+  if (animationId.value !== null) {
+    cancelAnimationFrame(animationId.value);
+  }
+  const loop = () => {
+    drawFrame();
+    animationId.value = requestAnimationFrame(loop);
+  };
+  animationId.value = requestAnimationFrame(loop);
+};
+
+const drawFrame = () => {
+  const canvas = bgCanvas.value;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const ratio = window.devicePixelRatio || 1;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  shapes.value.forEach((shape) => {
+    updateShape(shape);
+    drawShape(ctx, shape);
+  });
+};
+
+const updateShape = (shape: FloatingShape) => {
+  const halfW = shape.width / 2;
+  const halfH = shape.height / 2;
+  shape.x += shape.vx;
+  shape.y += shape.vy;
+  shape.rotation += shape.vr;
+
+  if (shape.x - halfW < 0 || shape.x + halfW > viewSize.width) {
+    shape.vx *= -1;
+    shape.x = clamp(shape.x, halfW, viewSize.width - halfW);
+  }
+  if (shape.y - halfH < 0 || shape.y + halfH > viewSize.height) {
+    shape.vy *= -1;
+    shape.y = clamp(shape.y, halfH, viewSize.height - halfH);
+  }
+};
+
+const drawShape = (ctx: CanvasRenderingContext2D, shape: FloatingShape) => {
+  ctx.save();
+  ctx.translate(shape.x, shape.y);
+  ctx.rotate(shape.rotation);
+  ctx.globalAlpha = shape.opacity;
+  ctx.fillStyle = shape.color;
+
+  switch (shape.kind) {
+    case "circle":
+      ctx.beginPath();
+      ctx.arc(0, 0, shape.width / 2, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case "capsule":
+      drawRoundedRect(ctx, -shape.width / 2, -shape.height / 2, shape.width, shape.height, shape.height / 2);
+      break;
+    default:
+      drawRoundedRect(ctx, -shape.width / 2, -shape.height / 2, shape.width, shape.height, shape.radius);
+  }
+
+  ctx.restore();
+};
+
+const drawRoundedRect = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) => {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+  ctx.fill();
+};
+
 
 </script>
 
@@ -242,6 +440,27 @@ body,
   padding: 0;
   display: flex;
   flex-direction: column;
+}
+
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background: radial-gradient(120% 120% at 20% 20%, #0f1a2b, #080d19 60%, #050812);
+}
+
+.floating-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(0.4px) saturate(110%);
+}
+
+.floating-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .nav-item {
@@ -257,6 +476,8 @@ body,
   align-items: center;
   padding: 0 !important;
   overflow: hidden;
+  position: relative;
+  z-index: 1;
 }
 
 /* 移除TDesign的默认内边距 */
@@ -280,6 +501,12 @@ body,
 :deep(.t-menu__item.t-is-active) {
   color: #0052d9 !important;
   background-color: rgba(0, 82, 217, 0.1) !important;
+}
+
+:deep(.t-layout) {
+  background: transparent;
+  position: relative;
+  z-index: 1;
 }
 
 /* 页面过渡效果 */
