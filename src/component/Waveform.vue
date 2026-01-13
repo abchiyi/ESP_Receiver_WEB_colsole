@@ -471,8 +471,11 @@ function valueToY(v: number, h: number): number {
 // 接收正值，负值按0处理，并按最大值缩放到0~1000范围
 function positiveScaled(vals: number[]): number[] {
     const numbers = vals.map((v) => Number.isFinite(v as number) ? Math.max(0, v as number) : 0);
-    // fixed scale based on valueMax; clamp to [0, valueMax]
-    return numbers.map((v) => Math.max(0, Math.min(props.valueMax, v)));
+    // scale from [0, valueMax] to [0, 1000] for mapValueToY
+    return numbers.map((v) => {
+        const clamped = Math.max(0, Math.min(props.valueMax, v));
+        return (clamped / props.valueMax) * 1000;
+    });
 }
 
 </script>
