@@ -1,5 +1,15 @@
 <template>
   <div class="setting">
+    <!-- 未连接提示对话框 -->
+    <t-dialog v-model:visible="showDisconnectModal" title="设备未连接" :close-btn="false" :ok-btn="false" :cancel-btn="false"
+      width="400px" class="disconnect-dialog">
+      <div class="disconnect-content">
+        <t-icon name="error-circle" class="disconnect-icon" />
+        <p class="disconnect-message">WebSocket 未连接到设备</p>
+        <p class="disconnect-hint">请在主界面配置并连接到 WebSocket 服务器</p>
+      </div>
+    </t-dialog>
+
     <t-card title="监控" class="chart-card">
       <div class="chart-toolbar">
         <t-switch v-model="demoMode" size="small" />
@@ -20,7 +30,7 @@
       <t-col :xs="12" :sm="6" :lg="4" class="card-col">
         <t-card title="通信设置">
           <p><span></span></p>
-          <t-form layout="vertical" label-width="100px" :model="Config" :rules="rules" ref="form" @submit="onSubmit">
+          <t-form layout="vertical" label-width="100px" :model="Config" ref="form" @submit="onSubmit">
 
             <t-form-item label="无线模式" name="radio_mode">
               <t-select v-model="Config.radio_mode" size="small" :options="getRadioModeOptions()" />
@@ -77,34 +87,7 @@ enum radio_mode {
   __radio_mode_max
 }
 
-// Xbox输入按钮枚举
-enum XBOX_INPUT {
-  None, // no button
-  btnA,
-  btnB,
-  btnX,
-  btnY,
-  btnLB,
-  btnRB,
-  btnSelect,
-  btnStart,
-  btnXbox,
-  btnLS,
-  btnRS,
-  btnShare,
-  btnDirUp,
-  btnDirRight,
-  btnDirDown,
-  btnDirLeft,
-  XBOX_BUTTON_MAX, // max value
-  joyLHori = (XBOX_BUTTON_MAX + 1),
-  joyLVert,
-  joyRHori,
-  joyRVert,
-  trigLT,
-  trigRT,
-  XBOX_HAT_MAX // max value for joystick axes
-};
+
 
 // 使用全局WebSocketClient实例
 const wsClient = webSocketClient;
@@ -141,85 +124,20 @@ watch(demoMode, (v) => {
   if (v) startDemo(); else stopDemo();
 });
 
-// 表单引用
-const form = ref();
-
 // WebSocket状态
 const isConnected = ref(false);
+const showDisconnectModal = ref(false);
+
+watch(isConnected, (v) => {
+  showDisconnectModal.value = !v;
+});
 
 // 设备配置
 const Config = reactive({
-  ssid: '',
-  pass: '',
   radio_mode: radio_mode.ESP_NOW, // 默认使用ESP_NOW模式
-  ROLL: XBOX_INPUT.None,
-  PITCH: XBOX_INPUT.None,
-  YAW: XBOX_INPUT.None,
-  THRUST: XBOX_INPUT.None,
-  breaker: [XBOX_INPUT.None, XBOX_INPUT.None],
-  Reverse: XBOX_INPUT.None,
-  ROLL_FLIP: false,
-  PITCH_FLIP: false,
-  YAW_FLIP: false,
-  THRUST_FLIP: false,
-  breaker_FLIP: [false, false],
-  Reverse_FLIP: false
 });
 
 const channelSettings = ref<ChannelSetting[]>(buildDefaultChannels());
-
-import type { FormRule, } from 'tdesign-vue-next';
-
-// 生成XBOX_INPUT选项
-const getXboxInputOptions = () => {
-  const buttonLabels: Record<string, string> = {
-    'None': '无',
-    'btnA': 'A按钮',
-    'btnB': 'B按钮',
-    'btnX': 'X按钮',
-    'btnY': 'Y按钮',
-    'btnLB': '左肩按钮',
-    'btnRB': '右肩按钮',
-    'btnSelect': '选择按钮',
-    'btnStart': '开始按钮',
-    'btnXbox': 'Xbox按钮',
-    'btnLS': '左摇杆按钮',
-    'btnRS': '右摇杆按钮',
-    'btnShare': '分享按钮',
-    'btnDirUp': '方向上',
-    'btnDirRight': '方向右',
-    'btnDirDown': '方向下',
-    'btnDirLeft': '方向左',
-    'joyLHori': '左摇杆水平',
-    'joyLVert': '左摇杆垂直',
-    'joyRHori': '右摇杆水平',
-    'joyRVert': '右摇杆垂直',
-    'trigLT': '左扳机',
-    'trigRT': '右扳机'
-  };
-
-  return Object.keys(XBOX_INPUT)
-    .filter(key => typeof XBOX_INPUT[key as keyof typeof XBOX_INPUT] === 'number'
-      && ['XBOX_BUTTON_MAX', 'XBOX_HAT_MAX'].indexOf(key) == -1)
-    .map(key => ({ label: buttonLabels[key] || key, value: XBOX_INPUT[key as keyof typeof XBOX_INPUT] }));
-};
-
-const getJoyInputOptions = () => {
-  const axisLabels: Record<string, string> = {
-    'None': '无',
-    'joyLHori': '左摇杆水平',
-    'joyLVert': '左摇杆垂直',
-    'joyRHori': '右摇杆水平',
-    'joyRVert': '右摇杆垂直',
-    'trigLT': '左扳机',
-    'trigRT': '右扳机'
-  };
-
-  return Object.keys(XBOX_INPUT)
-    .filter(key => typeof XBOX_INPUT[key as keyof typeof XBOX_INPUT] === 'number'
-      && ['None', 'joyLHori', 'joyLVert', 'joyRHori', 'joyRVert', 'trigLT', 'trigRT'].includes(key))
-    .map(key => ({ label: axisLabels[key] || key, value: XBOX_INPUT[key as keyof typeof XBOX_INPUT] }));
-};
 
 const getRadioModeOptions = () => {
   const modeLabels: Record<string, string> = {
@@ -232,13 +150,6 @@ const getRadioModeOptions = () => {
     .map(key => ({ label: modeLabels[key] || key, value: radio_mode[key as keyof typeof radio_mode] }));
 };
 
-// 表单验证规则
-const rules = {
-  ssid: [
-    { required: true, message: '请输入WiFi名称', type: 'error' as const },
-    { min: 1, max: 32, message: 'WiFi名称长度应在1-32个字符之间', type: 'warning' as const }
-  ] as FormRule[]
-};
 
 // 更新连接状态
 const updateConnectionStatus = () => {
@@ -292,62 +203,11 @@ function onMessage(data: any) {
     // 验证数据格式
     if (typeof jsonData === 'object' && jsonData !== null) {
 
-      Config.ssid = jsonData.ssid != undefined ? jsonData.ssid : "";
-      Config.pass = jsonData.pass != undefined ? jsonData.pass : "";
 
       // 如果radio_mode未定义，默认为ESP_NOW模式
       Config.radio_mode = jsonData.radio_mode !== undefined
         ? jsonData.radio_mode
         : radio_mode.ESP_NOW;
-
-      Config.ROLL = jsonData.ROLL !== undefined
-        ? jsonData.ROLL
-        : XBOX_INPUT.None;
-
-      Config.PITCH = jsonData.PITCH !== undefined
-        ? jsonData.PITCH
-        : XBOX_INPUT.None;
-
-      Config.YAW = jsonData.YAW !== undefined
-        ? jsonData.YAW
-        : XBOX_INPUT.None;
-
-      Config.THRUST = jsonData.THRUST !== undefined
-        ? jsonData.THRUST
-        : XBOX_INPUT.None;
-
-      Config.breaker = jsonData.breaker !== undefined
-        ? jsonData.breaker
-        : [XBOX_INPUT.None, XBOX_INPUT.None];
-
-      Config.Reverse = jsonData.Reverse !== undefined
-        ? jsonData.Reverse
-        : XBOX_INPUT.None;
-
-      Config.ROLL_FLIP = jsonData.ROLL_FLIP !== undefined
-        ? Boolean(jsonData.ROLL_FLIP)
-        : false;
-
-      Config.PITCH_FLIP = jsonData.PITCH_FLIP !== undefined
-        ? Boolean(jsonData.PITCH_FLIP)
-        : false;
-
-      Config.YAW_FLIP = jsonData.YAW_FLIP !== undefined
-        ? Boolean(jsonData.YAW_FLIP)
-        : false;
-
-      Config.THRUST_FLIP = jsonData.THRUST_FLIP !== undefined
-        ? Boolean(jsonData.THRUST_FLIP)
-        : false;
-
-      Config.breaker_FLIP = jsonData.breaker_FLIP !== undefined
-        ? jsonData.breaker_FLIP.map((item: any) => Boolean(item))
-        : [false, false];
-
-      Config.Reverse_FLIP = jsonData.Reverse_FLIP !== undefined
-        ? Boolean(jsonData.Reverse_FLIP)
-        : false;
-
 
       MessagePlugin.success('设备配置已更新');
 
@@ -431,10 +291,10 @@ onBeforeUnmount(() => {
 
 function buildDefaultChannels(): ChannelSetting[] {
   return [
-    { id: 1, name: 'CH1', min: -1000, center: 0, max: 1000, reverse: false, expo: 0, rate: 100 },
-    { id: 2, name: 'CH2', min: -1000, center: 0, max: 1000, reverse: false, expo: 0, rate: 100 },
-    { id: 3, name: 'CH3', min: -1000, center: 0, max: 1000, reverse: false, expo: 0, rate: 100 },
-    { id: 4, name: 'CH4', min: -1000, center: 0, max: 1000, reverse: false, expo: 0, rate: 100 },
+    { id: 1, name: 'CH1', min: 500, center: 1500, max: 2500, reverse: false, expo: 0, rate: 100 },
+    { id: 2, name: 'CH2', min: 500, center: 1500, max: 2500, reverse: false, expo: 0, rate: 100 },
+    { id: 3, name: 'CH3', min: 500, center: 1500, max: 2500, reverse: false, expo: 0, rate: 100 },
+    { id: 4, name: 'CH4', min: 500, center: 1500, max: 2500, reverse: false, expo: 0, rate: 100 },
   ];
 }
 
@@ -519,5 +379,38 @@ function buildDefaultChannels(): ChannelSetting[] {
   :deep(.t-form__item) {
     margin-bottom: 16px;
   }
+}
+</style>
+
+<style scoped>
+.disconnect-dialog {
+  pointer-events: auto;
+}
+
+.disconnect-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+  padding: 20px 0;
+}
+
+.disconnect-icon {
+  font-size: 48px;
+  color: var(--td-error-color);
+}
+
+.disconnect-message {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--td-text-color);
+  margin: 0;
+}
+
+.disconnect-hint {
+  font-size: 14px;
+  color: var(--td-text-color-secondary);
+  margin: 0;
 }
 </style>

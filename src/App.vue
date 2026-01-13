@@ -5,22 +5,11 @@
     </div>
 
     <t-layout ref="layout" class="fullscreen-layout">
+
       <!-- 导航栏 -->
       <t-header class="nav-header" :style="getNavHeaderStyle">
         <div class="header-container">
-          <t-head-menu theme="dark" :value="currentTab" @change="handleMenuChange" class="nav-menu">
-            <t-menu-item value="att" class="nav-item">
-              <template #icon>
-                <t-icon name="dashboard" />
-              </template>
-              仪表
-            </t-menu-item>
-            <t-menu-item value="settings" class="nav-item">
-              <template #icon>
-                <t-icon name="setting" />
-              </template>
-              设置
-            </t-menu-item>
+          <t-head-menu theme="dark" class="nav-menu">
 
 
             <template #operations>
@@ -28,7 +17,7 @@
                 <t-tooltip :content="wsStatus.message" :theme="wsStatus.theme" placement="bottom">
                   <div class="ws-status-indicator" :style="{ backgroundColor: wsStatus.iconColor }"></div>
                 </t-tooltip>
-                <t-input-adornment prepend="ws://">
+                <t-input-adornment>
                   <t-input clearable v-model="wsAddress" placeholder="WebSocket地址" :status="wsStatus.type"
                     @blur="updateWsAddress" />
                 </t-input-adornment>
@@ -41,10 +30,7 @@
 
       <!-- 内容区域 -->
       <t-content class="fullscreen-content">
-        <!-- 使用transition组件添加过渡效果 -->
-        <transition name="fade" mode="out-in">
-          <component :is="currentPage" v-if="currentPage" />
-        </transition>
+        <Console />
       </t-content>
     </t-layout>
   </div>
@@ -53,8 +39,7 @@
 <script setup lang="ts">
 const PORT_WS = 81
 import { ref, reactive, onMounted, onBeforeUnmount, markRaw, shallowRef, computed } from "vue";
-import Dashboard from "./view/Dashboard.vue";
-import Settings from "./view/Setting.vue";
+import Console from "./view/Console.vue";
 import { webSocketClient } from "./common";
 
 type ShapeKind = "circle" | "rounded-rect" | "capsule";
@@ -74,23 +59,9 @@ type FloatingShape = {
   opacity: number;
 };
 
-const currentPage = shallowRef(markRaw(Dashboard));
-const currentTab = ref('att');// 当前选中的标签页
+const currentPage = shallowRef(markRaw(Console));
 
-// 处理导航菜单切换
-function handleMenuChange(value: string | number) {
-  currentTab.value = String(value);
-
-  switch (value) {
-    case 'att':
-      currentPage.value = markRaw(Dashboard);
-      break;
-
-    case 'settings':
-      currentPage.value = markRaw(Settings);
-      break;
-  }
-}
+// 处理导航菜单切换 - 已移除，现在直接显示 Settings 页面
 
 // 全屏元素引用
 const layout = ref<HTMLElement | null>(null);
@@ -164,6 +135,11 @@ const updateWsAddress = () => {
     // if (!wsAddress.value.startsWith('ws://') && !wsAddress.value.startsWith('wss://')) {
     //   throw new Error('无效的WebSocket URL');
     // }
+
+    // 检查并自动添加ws://前缀
+    if (!wsAddress.value.startsWith('ws://')) {
+      wsAddress.value = 'ws://' + wsAddress.value;
+    }
 
     console.log('WebSocket地址已更新:', wsAddress.value);
 
