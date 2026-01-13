@@ -1,95 +1,50 @@
 <template>
   <div class="setting">
-    <t-space direction="vertical" size="large" style="width: 100%">
-      <!-- WiFi配置部分 -->
-      <t-card title="配置" :bordered="false" class="config-card">
-        <t-form ref="form" :data="Config" :rules="rules" @submit="onSubmit">
-          <t-form-item label="SSID" name="ssid">
-            <t-input v-model="Config.ssid" :placeholder="Config.ssid" />
-          </t-form-item>
-
-          <t-form-item label="PASS" name="password">
-            <t-input v-model="Config.pass" :placeholder="Config.pass" />
-          </t-form-item>
-
-          <t-form-item label="控制模式" name="control_mode">
-            <t-radio-group v-model="Config.control_mode">
-              <t-radio :value="0">从机模式 (Slave)</t-radio>
-              <t-radio :value="1">主机模式 (Master)</t-radio>
-            </t-radio-group>
-          </t-form-item>
-
-          <t-form-item label="无线模式" name="radio_mode">
-            <t-select v-model="Config.radio_mode" :options="getRadioModeOptions()" />
-          </t-form-item>
-
-          <t-form-item label="ROLL" name="ROLL">
-            <t-select v-model="Config.ROLL" :options="getJoyInputOptions()" />
-            <t-switch v-model="Config.ROLL_FLIP" style="margin-left: 10px">
-              <template #label>R</template>
-            </t-switch>
-          </t-form-item>
-
-          <t-form-item label="PITCH" name="PITCH">
-            <t-select v-model="Config.PITCH" :options="getJoyInputOptions()" />
-            <t-switch v-model="Config.PITCH_FLIP" style="margin-left: 10px">
-              <template #label>R</template>
-            </t-switch>
-          </t-form-item>
-
-          <t-form-item label="YAW" name="YAW">
-            <t-select v-model="Config.YAW" :options="getJoyInputOptions()" />
-            <t-switch v-model="Config.YAW_FLIP" style="margin-left: 10px">
-              <template #label>R</template>
-            </t-switch>
-          </t-form-item>
-
-          <t-form-item label="THRUST" name="THRUST">
-            <t-select v-model="Config.THRUST" :options="getJoyInputOptions()" />
-            <t-switch v-model="Config.THRUST_FLIP" style="margin-left: 10px">
-              <template #label>R</template>
-            </t-switch>
-          </t-form-item>
-
-          <t-form-item label="Breaker A" name="breaker[0]">
-            <t-select v-model="Config.breaker[0]" :options="getXboxInputOptions()" />
-            <t-switch v-model="Config.breaker_FLIP[0]" style="margin-left: 10px">
-              <template #label>R</template>
-            </t-switch>
-          </t-form-item>
-
-          <t-form-item label="Breaker B" name="breaker[1]">
-            <t-select v-model="Config.breaker[1]" :options="getXboxInputOptions()" />
-            <t-switch v-model="Config.breaker_FLIP[1]" style="margin-left: 10px">
-              <template #label>R</template>
-            </t-switch>
-          </t-form-item>
-
-          <t-form-item label="Reverse" name="reverse">
-            <t-select v-model="Config.Reverse" :options="getXboxInputOptions()" />
-            <t-switch v-model="Config.Reverse_FLIP" style="margin-left: 10px">
-              <template #label>R</template>
-            </t-switch>
-          </t-form-item>
+    <t-card title="监控" class="chart-card">
+      <div class="chart-toolbar">
+        <t-switch v-model="demoMode" size="small" />
+        <span class="toolbar-label">演示数据</span>
+      </div>
+      <Waveform :values="channelOutputs" :height="240" :stacked="false" />
+    </t-card>
+    <t-row :gutter="[16, 16]" class="layout-row with-gap">
+      <t-col :xs="12" :sm="6" :lg="4" class="card-col">
+        <t-card title="基本参数"></t-card>
+      </t-col>
+      <t-col :xs="12" :sm="6" :lg="4" class="card-col">
+        <t-card title="通信设置"></t-card>
+      </t-col>
+    </t-row>
 
 
-          <t-space>
-            <t-button theme="primary" type="submit" :disabled="!isConnected || !Config.ssid">
-              发送配置
-            </t-button>
-          </t-space>
-        </t-form>
-      </t-card>
 
-
-    </t-space>
+    <t-row :gutter="[16, 16]" class="channel-row with-gap">
+      <t-col v-for="channel in channelSettings" :key="channel.id" :xs="12" :sm="6" :lg="4" class="card-col">
+        <channel-set :title="`通道 ${channel.name}`" :model-value="channel"
+          @update:modelValue="(val) => updateChannel(val.id, val)" @save="handleChannelSave" />
+      </t-col>
+    </t-row>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue';
+import { ref, onMounted, reactive, watch, onBeforeUnmount } from 'vue';
 import { MessagePlugin, Select as TSelect, Option as TOption } from 'tdesign-vue-next';
 import { DataOperation, DataPort, webSocketClient } from '../common';
+import ChannelSet from '../component/channelSet.vue';
+import Waveform from '../component/Waveform.vue';
+
+type ChannelSetting = {
+  id: number;
+  name: string;
+  min: number;
+  center: number;
+  max: number;
+  reverse: boolean;
+  expo: number;
+  rate: number;
+};
+
 
 
 // 无线模式枚举
@@ -131,6 +86,38 @@ enum XBOX_INPUT {
 // 使用全局WebSocketClient实例
 const wsClient = webSocketClient;
 
+// 4通道输出（-1000 ~ 1000）
+const channelOutputs = ref<number[]>([0, 0, 0, 0]);
+
+// 演示数据开关与生成器
+const demoMode = ref(false);
+let demoTimer: number | null = null;
+let theta = 0;
+
+function startDemo() {
+  stopDemo();
+  demoTimer = window.setInterval(() => {
+    theta += 0.08;
+    const t = theta;
+    const ch1 = Math.sin(t) * 900;
+    const ch2 = Math.cos(t * 0.9 + 0.4) * 800;
+    const ch3 = Math.sin(t * 1.2 + 1.2) * 700;
+    const ch4 = (Math.sin(t * 0.6) + Math.sin(t * 2.2 + 0.7)) * 250;
+    channelOutputs.value = [ch1, ch2, ch3, ch4];
+  }, 33);
+}
+
+function stopDemo() {
+  if (demoTimer !== null) {
+    clearInterval(demoTimer);
+    demoTimer = null;
+  }
+}
+
+watch(demoMode, (v) => {
+  if (v) startDemo(); else stopDemo();
+});
+
 // 表单引用
 const form = ref();
 
@@ -141,7 +128,6 @@ const isConnected = ref(false);
 const Config = reactive({
   ssid: '',
   pass: '',
-  control_mode: 0, // 0: slave模式, 1: master模式
   radio_mode: radio_mode.ESP_NOW, // 默认使用ESP_NOW模式
   ROLL: XBOX_INPUT.None,
   PITCH: XBOX_INPUT.None,
@@ -156,6 +142,8 @@ const Config = reactive({
   breaker_FLIP: [false, false],
   Reverse_FLIP: false
 });
+
+const channelSettings = ref<ChannelSetting[]>(buildDefaultChannels());
 
 import type { FormRule, } from 'tdesign-vue-next';
 
@@ -260,6 +248,15 @@ const saveConfig = () => {
   wsClient.send(configMessage);
 };
 
+const updateChannel = (id: number, value: ChannelSetting) => {
+  channelSettings.value = channelSettings.value.map((ch) => (ch.id === id ? { ...value } : ch));
+};
+
+const handleChannelSave = (value: ChannelSetting) => {
+  updateChannel(value.id, value);
+  MessagePlugin.success(`通道 ${value.name} 配置已保存`);
+};
+
 // WebSocket消息事件处理 Callback
 function onMessage(data: any) {
   try {
@@ -274,10 +271,6 @@ function onMessage(data: any) {
 
       Config.ssid = jsonData.ssid != undefined ? jsonData.ssid : "";
       Config.pass = jsonData.pass != undefined ? jsonData.pass : "";
-
-      // 如果control_mode未定义，默认为slave模式(0)
-      Config.control_mode = jsonData.control_mode !== undefined
-        ? jsonData.control_mode : 0;
 
       // 如果radio_mode未定义，默认为ESP_NOW模式
       Config.radio_mode = jsonData.radio_mode !== undefined
@@ -334,12 +327,48 @@ function onMessage(data: any) {
 
 
       MessagePlugin.success('设备配置已更新');
+
+      // 解析输出通道波形数据（尽量兼容多种字段）
+      const next = parseChannelOutputs(jsonData);
+      if (next && !demoMode.value) {
+        channelOutputs.value = next;
+      }
     }
   } catch (error) {
     console.error('解析WebSocket消息失败:', error);
     MessagePlugin.error('解析设备返回的数据失败');
   }
 }
+
+// 尝试从设备消息中解析4通道输出，返回[-1000,1000]范围数组
+function parseChannelOutputs(payload: any): number[] | null {
+  if (!payload || typeof payload !== 'object') return null;
+
+  // 1) 数组形式：channels / outputs / out
+  const arrKey = ['channels', 'outputs', 'out'];
+  for (const k of arrKey) {
+    const v = payload[k];
+    if (Array.isArray(v) && v.length >= 4) {
+      return [toNum(v[0]), toNum(v[1]), toNum(v[2]), toNum(v[3])].map(clamp1000);
+    }
+  }
+
+  // 2) 独立字段：CH1..CH4 或 ch1..ch4
+  const fields = ['CH1', 'CH2', 'CH3', 'CH4'];
+  const lower = ['ch1', 'ch2', 'ch3', 'ch4'];
+  const a: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    let v: any = undefined;
+    if (payload.hasOwnProperty(fields[i])) v = payload[fields[i]];
+    else if (payload.hasOwnProperty(lower[i])) v = payload[lower[i]];
+    else return null; // 缺少字段则放弃
+    a.push(clamp1000(toNum(v)));
+  }
+  return a.length === 4 ? a : null;
+}
+
+function toNum(v: any): number { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+function clamp1000(v: number): number { return Math.max(-1000, Math.min(1000, v)); }
 
 onMounted(() => {
   // 设置事件监听器
@@ -363,16 +392,28 @@ onMounted(() => {
   };
   wsClient.send(requestData);
 
-  // 延迟一秒后检查是否收到了mode值，如果没有则再次请求
-  setTimeout(() => {
-    if (Config.control_mode === undefined) {
-      wsClient.send(requestData);
-    }
-  }, 1000);
 
   // 初始状态更新
   updateConnectionStatus();
+
+  // 若未连接，则默认开启演示数据
+  if (!wsClient.isConnected()) {
+    demoMode.value = true;
+  }
 });
+
+onBeforeUnmount(() => {
+  stopDemo();
+});
+
+function buildDefaultChannels(): ChannelSetting[] {
+  return [
+    { id: 1, name: 'CH1', min: -1000, center: 0, max: 1000, reverse: false, expo: 0, rate: 100 },
+    { id: 2, name: 'CH2', min: -1000, center: 0, max: 1000, reverse: false, expo: 0, rate: 100 },
+    { id: 3, name: 'CH3', min: -1000, center: 0, max: 1000, reverse: false, expo: 0, rate: 100 },
+    { id: 4, name: 'CH4', min: -1000, center: 0, max: 1000, reverse: false, expo: 0, rate: 100 },
+  ];
+}
 
 
 </script>
@@ -380,35 +421,60 @@ onMounted(() => {
 <style scoped>
 .setting {
   padding: 20px;
-  max-width: 800px;
   margin: 0 auto;
+  max-width: 1280px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.config-card,
-.monitor-card {
-  margin-bottom: 24px;
+.layout-row {
+  width: 100%;
 }
 
-.status-alert {
-  margin-left: 16px;
-  flex-grow: 1;
+.channel-row {
+  width: 100%;
 }
 
-.message-section {
-  margin: 16px 0;
+.with-gap {
+  margin: -8px;
 }
 
-/* 自定义列表样式 */
-:deep(.t-list) {
-  border: 1px solid var(--td-component-border);
+.card-col {
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.channel-wrapper {
+  width: 100%;
+}
+
+.chart-card {
+  width: 100%;
+}
+
+.chart-placeholder {
+  height: 240px;
+  border: 1px dashed var(--td-component-border);
   border-radius: var(--td-radius-medium);
-  max-height: 200px;
-  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-container-hover);
 }
 
-:deep(.t-list-item) {
-  padding: 8px 16px;
-  font-size: 14px;
+.chart-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.toolbar-label {
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
 }
 
 /* 确保表单布局美观 */
