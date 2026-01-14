@@ -253,7 +253,9 @@ onMounted(() => {
 
   wsClient.onMessage(onMessage); // 注册消息监听器
 
-  SYNC_DEVICE_DATA(false); // 连接后立即同步数据
+  setTimeout(() => {
+    SYNC_DEVICE_DATA(false); // 连接后立即同步数据
+  }, 500);
 
 });
 
