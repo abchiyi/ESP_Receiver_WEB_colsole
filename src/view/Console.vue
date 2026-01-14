@@ -8,9 +8,10 @@
     <t-row :gutter="[16, 16]" class="layout-row with-gap">
 
 
-      <t-col v-for="channel in config.channel_settings" :key="channel.id" :xs="12" :sm="6" :lg="4" class="card-col">
-        <channel-set :model-value="channel" :use-bt-gamepad="config.radio_mode == radio_mode.BT_CONTROLLER"
-          @update:modelValue="(val) => updateChannel(val.id, val)" />
+      <t-col v-for="(channel, index) in config.channel_settings" :key="channel.id" :xs="12" :sm="6" :lg="4"
+        class="card-col">
+        <channel-set v-model="config.channel_settings[index]"
+          :use-bt-gamepad="config.radio_mode == radio_mode.BT_CONTROLLER" />
       </t-col>
 
 
@@ -19,7 +20,7 @@
           <t-form layout="vertical" label-width="100px" :model="config" ref="form">
 
             <t-form-item label="无线模式" name="radio_mode">
-              <t-select v-model="config.radio_mode" size="small" :options="getRadioModeOptions()" />
+              <t-select v-model="config.radio_mode" size="small" :options="radioModeOptions" />
             </t-form-item>
 
           </t-form>
@@ -57,60 +58,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive, watch, onBeforeUnmount } from 'vue';
+import { ref, onMounted, reactive, watch, onBeforeUnmount, computed } from 'vue';
 import { MessagePlugin, Select as TSelect, Option as TOption } from 'tdesign-vue-next';
 import { webSocketClient as wsClient } from '../common';
 import ChannelSet from '../component/channelSet.vue';
 import Waveform from '../component/Waveform.vue';
+import { CHANNEL_COUNT, radio_mode, DataPort, type ChannelSetting, type configData, type receiverInfo } from '../types';
+import { buildDefaultChannels, getRadioModeOptions } from '../utils';
 
-//==============================================
-// 类似&枚举常量声明
-//==============================================
-
-// 通道数量常量
-const CHANNEL_COUNT = 4;
-
-// 接收机通道基本配置结构
-type ChannelSetting = {
-  id: number; // 通道ID
-  name: string; // 通道别名
-  min: number; // 最小值脉宽
-  center: number; // 中值脉宽
-  max: number; // 最大值脉宽
-  reverse: boolean; // true表示反向 ，反向raw值
-  offset: number; // pwm中位偏移值
-  xbox_input_key: number; // Xbox输入键映射,如果设备处于蓝牙手柄模式
-};
-
-
-// 接收机状态信息
-type receiverInfo = {
-  rssi_ground: number; // 地面RSSI值
-  rssi_air: number; // 空中RSSI值
-  battery_voltage: number; // 电池电压
-  firmware_version: string; // 固件版本
-  channel_outputs: [number, number, number, number]; // 通道输出值数组
-};
-
-type configData = {
-  radio_mode: number; // 无线模式
-  channel_settings: ChannelSetting[]; // 通道设置数组
-};
-
-
-enum DataPort {
-  PORT_CONFIG_SYNC = 0,          // 同步配置端口(双向)
-  PORT_CONFIG_AND_CHANNEL_SYNC,  // 从接收机同步基本信息和通道输出值(单向)
-  ___data_port_max
-}
-
-
-// 无线模式枚举
-enum radio_mode {
-  ESP_NOW = 0,
-  BT_CONTROLLER,
-  __radio_mode_max
-}
+// 类型与枚举从共享模块引入
 
 //==============================================
 // 变量&对象声明
@@ -137,17 +93,8 @@ const receiverInfo = reactive<receiverInfo>({
 // 方法函数声明
 //==============================================
 
-// TODO 修改为计算属性
-const getRadioModeOptions = () => {
-  const modeLabels: Record<string, string> = {
-    'ESP_NOW': 'ESP-NOW'
-  };
-
-  return Object.keys(radio_mode)
-    .filter(key => typeof radio_mode[key as keyof typeof radio_mode] === 'number'
-      && key !== '__radio_mode_max')
-    .map(key => ({ label: modeLabels[key] || key, value: radio_mode[key as keyof typeof radio_mode] }));
-};
+// 计算属性：无线模式选项
+const radioModeOptions = computed(() => getRadioModeOptions(radio_mode));
 
 
 // WebSocket消息事件处理 Callback
@@ -161,17 +108,12 @@ function onMessage(data: any) {
     /**
      * * 处理配置和通道同步数据
      */
-    if (jsonData.port === DataPort.PORT_CONFIG_AND_CHANNEL_SYNC) {
-      // 处理配置和通道同步数据
-      if (typeof jsonData.config === 'object' && jsonData.config !== null) {
-        // 更新配置数据
-        if (typeof jsonData.config.radio_mode === 'number') {
-          config.radio_mode = jsonData.config.radio_mode;
-        }
-        if (Array.isArray(jsonData.config.channel_settings)) {
-          // 简单替换通道设置数组
-          config.channel_settings = jsonData.config.channel_settings;
-        }
+    if (jsonData?.channel_settings !== undefined) {
+      if (typeof jsonData.radio_mode === 'number') {
+        config.radio_mode = jsonData.radio_mode;
+      }
+      if (Array.isArray(jsonData.channel_settings)) {
+        config.channel_settings = jsonData.channel_settings;
       }
 
       /**
@@ -195,7 +137,6 @@ function onMessage(data: any) {
         }
         if (Array.isArray(info.channel_outputs) && info.channel_outputs.length === CHANNEL_COUNT) {
           receiverInfo.channel_outputs = info.channel_outputs as [number, number, number, number];
-
         }
       }
     }
@@ -241,7 +182,7 @@ function onMessage(data: any) {
  * - 依赖 DataPort.PORT_CONFIG_SYNC 端口定义
  * - 发送的数据格式为 JSON 字符串
  */
-function SYNC_DEVICE_DATA(to_device: boolean = true) {
+function SYNC_DEVICE_DATA(to_device: boolean = true): void {
   if (to_device) {
     const payload = {
       port: DataPort.PORT_CONFIG_SYNC,
@@ -252,7 +193,7 @@ function SYNC_DEVICE_DATA(to_device: boolean = true) {
   } else {
     const payload = {
       port: DataPort.PORT_CONFIG_SYNC,
-      request: 'sync',
+      sync: true,
     };
     wsClient.send(JSON.stringify(payload));
     console.log('请求从设备同步配置数据:', payload);
@@ -315,39 +256,6 @@ onMounted(() => {
   SYNC_DEVICE_DATA(false); // 连接后立即同步数据
 
 });
-
-
-/**
- * 构建默认通道设置数组。
- *
- * 根据全局常量 CHANNEL_COUNT 生成 CHANNEL_COUNT 个 ChannelSetting 对象，
- * 每个对象包含以下默认值：
- * - id: 从 0 开始递增的通道索引
- * - name: "CH" + (id + 1)
- * - min: 1000
- * - center: 1500
- * - max: 2000
- * - reverse: false
- * - xbox_input_key: 0
- * @returns {ChannelSetting[]} 包含默认通道设置的数组，长度为 CHANNEL_COUNT。
- */
-function buildDefaultChannels(): ChannelSetting[] {
-  const channels: ChannelSetting[] = [];
-  for (let i = 0; i < CHANNEL_COUNT; i++) {
-    channels.push({
-      id: i,
-      name: `CH${i + 1}`,
-      min: 1000,
-      center: 1500,
-      max: 2000,
-      reverse: false,
-      xbox_input_key: 0,
-      offset: 0,
-    });
-  }
-  return channels;
-}
-
 
 </script>
 

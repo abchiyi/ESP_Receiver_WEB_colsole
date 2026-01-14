@@ -48,87 +48,37 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
-
-type ChannelSetting = {
-    id: number;
-    name: string;
-    min: number;
-    center: number;
-    max: number;
-    reverse: boolean;
-    offset: number;
-    xbox_input_key: number;
-};
+import { type ChannelSetting, XBOX_INPUT } from '../types';
+import { clamp, normalizeRange, normalizeName } from '../utils';
 
 const props = defineProps<{
-    modelValue?: ChannelSetting;
     useBtGamepad?: boolean; // 为 BT 手柄输入时展示额外选项
 }>();
 
-const emit = defineEmits<{
-    (e: 'update:modelValue', value: ChannelSetting): void;
-}>();
+// 与父级 v-model 建立双向绑定，父级变更会直接同步到该 ref
+const channel = defineModel<ChannelSetting>({ required: true });
 
-const defaultChannel: ChannelSetting = {
-    id: 1,
-    name: 'CH1',
-    min: 1000,
-    center: 1500,
-    max: 2000,
-    reverse: false,
-    offset: 0,
-    xbox_input_key: 0
-};
-
-// Xbox输入按钮枚举
-enum XBOX_INPUT {
-    None, // no button
-    btnA,
-    btnB,
-    btnX,
-    btnY,
-    btnLB,
-    btnRB,
-    btnSelect,
-    btnStart,
-    btnXbox,
-    btnLS,
-    btnRS,
-    btnShare,
-    btnDirUp,
-    btnDirRight,
-    btnDirDown,
-    btnDirLeft,
-    XBOX_BUTTON_MAX, // max value
-    joyLHori = (XBOX_BUTTON_MAX + 1),
-    joyLVert,
-    joyRHori,
-    joyRVert,
-    trigLT,
-    trigRT,
-    XBOX_HAT_MAX // max value for joystick axes
-};
-
-
-const channel = ref<ChannelSetting>(cloneChannel(props.modelValue || defaultChannel));
-
-watch(
-    () => props.modelValue,
-    (val) => { if (val) channel.value = cloneChannel(val); },
-    { deep: true }
-);
-
-const emitUpdate = () => emit('update:modelValue', cloneChannel(channel.value));
-
+// 通过整体赋值触发父级更新，包含校验与钳制逻辑
 const updateField = (patch: Partial<ChannelSetting>) => {
-    channel.value = { ...channel.value, ...patch };
-    emitUpdate();
+    // 先合并，再做规范化处理
+    let merged = { ...channel.value, ...patch } as ChannelSetting;
+    // 处理名称
+    if (patch.name !== undefined) {
+        merged = { ...merged, name: normalizeName(merged, patch.name) };
+    }
+    // 钳制 offset 到 [-200, 200]
+    if (patch.offset !== undefined) {
+        merged = { ...merged, offset: clamp(Number(patch.offset), -200, 200) };
+    }
+    // 修正范围 min/center/max
+    merged = normalizeRange(merged);
+    // 规范 xbox_input_key 为整数
+    if (patch.xbox_input_key !== undefined) {
+        const v = Number(patch.xbox_input_key);
+        merged = { ...merged, xbox_input_key: Number.isFinite(v) ? Math.trunc(v) : 0 };
+    }
+    channel.value = merged;
 };
-
-function cloneChannel(data: ChannelSetting): ChannelSetting {
-    return { ...data };
-}
 
 function getXboxInputOptions() {
     const labels: Record<string, string> = {
