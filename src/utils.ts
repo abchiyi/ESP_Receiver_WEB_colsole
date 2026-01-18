@@ -35,13 +35,14 @@ export function buildDefaultChannels(): ChannelSetting[] {
     for (let i = 0; i < CHANNEL_COUNT; i++) {
         channels.push({
             id: i,
-            name: `CH${i + 1}`,
+            name: `CH${i}`,
             min: 1000,
             center: 1500,
             max: 2000,
             reverse: false,
             xbox_input_key: 0,
             offset: 0,
+            thrust_mode: 0,
         });
     }
     return channels;

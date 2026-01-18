@@ -1,19 +1,28 @@
 <template>
   <div class="setting">
 
-    <t-card title="监控" class="chart-card">
-      <Waveform :values="receiverInfo.channel_outputs" :height="240" :stacked="false" />
-    </t-card>
+
 
     <t-row :gutter="[16, 16]" class="layout-row with-gap">
 
 
-      <t-col v-for="(channel, index) in config.channel_settings" :key="channel.id" :xs="12" :sm="6" :lg="4"
-        class="card-col">
+      <t-col v-for="(channel, index) in displayedChannels" :key="channel.id" :xs="12" :sm="6" :lg="4" class="card-col">
         <channel-set v-model="config.channel_settings[index]"
           :use-bt-gamepad="config.radio_mode == radio_mode.BT_CONTROLLER" />
       </t-col>
 
+
+      <t-col :xs="12" :sm="6" :lg="4" class="card-col">
+        <t-card title="通道附加设置">
+          <t-form layout="vertical" label-width="100px" :model="config" ref="form">
+            <p><span>启用选项以复用通道2,3作为H桥驱动器信号输入</span></p>
+            <t-form-item label="H桥驱动器支持" name="h_bridge_drv ">
+              <t-switch v-model="config.h_bridge_drv" size="small" />
+            </t-form-item>
+
+          </t-form>
+        </t-card>
+      </t-col>
 
       <t-col :xs="12" :sm="6" :lg="4" class="card-col">
         <t-card title="通信设置">
@@ -23,21 +32,14 @@
               <t-select v-model="config.radio_mode" size="small" :options="radioModeOptions" />
             </t-form-item>
 
+
+            <t-form-item label="LR 模式" name="wifi_lr_mode">
+              <t-switch v-model="config.wifi_lr_mode" size="small" />
+            </t-form-item>
+
           </t-form>
         </t-card>
       </t-col>
-
-      <t-col :xs="12" :sm="6" :lg="4" class="card-col">
-        <t-card title="基本参数">
-          <p>RC Mini C34B</p>
-          <p>固件版本 0.1B</p>
-          <p>电池串数 1S</p>
-          <p>电池电压 3.7V</p>
-          <p>RSSI 地面：-20db [良好]</p>
-          <p>RSSI 空中：-30db [良好]</p>
-        </t-card>
-      </t-col>
-
 
     </t-row>
 
@@ -75,6 +77,8 @@ import { buildDefaultChannels, getRadioModeOptions } from '../utils';
 // 配置对象用于在WEB APP 和接收机之间同步配置
 const config: configData = reactive({
   radio_mode: radio_mode.ESP_NOW,
+  wifi_lr_mode: 0,
+  h_bridge_drv: 0,
   channel_settings: buildDefaultChannels(),
 });
 
@@ -83,8 +87,8 @@ const config: configData = reactive({
 const receiverInfo = reactive<receiverInfo>({
   rssi_ground: -99,
   rssi_air: -99,
-  battery_voltage: 0,
-  firmware_version: '--',
+  battery_voltage: 3000,
+  battery_cell: 1,
   channel_outputs: [1500, 1500, 1500, 1500],
 });
 
@@ -95,6 +99,11 @@ const receiverInfo = reactive<receiverInfo>({
 
 // 计算属性：无线模式选项
 const radioModeOptions = computed(() => getRadioModeOptions(radio_mode));
+
+// 计算属性：根据 h_bridge_drv 显隐通道（启用时仅显示前两个通道）
+const displayedChannels = computed(() =>
+  Boolean(config.h_bridge_drv) ? config.channel_settings.slice(0, 2) : config.channel_settings
+);
 
 
 // WebSocket消息事件处理 Callback
@@ -115,31 +124,32 @@ function onMessage(data: any) {
       if (Array.isArray(jsonData.channel_settings)) {
         config.channel_settings = jsonData.channel_settings;
       }
+    }
 
-      /**
-      * * 处理接收机信息数据
-       */
-      if (typeof jsonData.receiver_info === 'object'
-        && jsonData.receiver_info !== null) {
 
-        const info = jsonData.receiver_info;
-        if (typeof info.rssi_ground === 'number') {
-          receiverInfo.rssi_ground = info.rssi_ground;
-        }
-        if (typeof info.rssi_air === 'number') {
-          receiverInfo.rssi_air = info.rssi_air;
-        }
-        if (typeof info.battery_voltage === 'number') {
-          receiverInfo.battery_voltage = info.battery_voltage;
-        }
-        if (typeof info.firmware_version === 'string') {
-          receiverInfo.firmware_version = info.firmware_version;
-        }
-        if (Array.isArray(info.channel_outputs) && info.channel_outputs.length === CHANNEL_COUNT) {
-          receiverInfo.channel_outputs = info.channel_outputs as [number, number, number, number];
-        }
+    /**
+    * * 处理接收机信息数据
+     */
+    if (jsonData?.channel_outputs !== undefined) {
+
+      if (typeof jsonData.rssi_ground === 'number')
+        receiverInfo.rssi_ground = jsonData.rssi_ground;
+
+      if (typeof jsonData.rssi_air === 'number') {
+        receiverInfo.rssi_air = jsonData.rssi_air;
+      }
+      if (typeof jsonData.battery_voltage === 'number') {
+        receiverInfo.battery_voltage = jsonData.battery_voltage;
+      }
+
+      if (typeof jsonData.battery_cell === "number") {
+        receiverInfo.battery_cell = jsonData.battery_cell
+      }
+      if (Array.isArray(jsonData.channel_outputs) && jsonData.channel_outputs.length === CHANNEL_COUNT) {
+        receiverInfo.channel_outputs = jsonData.channel_outputs as [number, number, number, number];
       }
     }
+
 
     // XXX 打印收到的数据
     console.log(data);
@@ -216,6 +226,7 @@ const updateChannel = (id: number, val: Partial<ChannelSetting>) => {
     max: val.max ?? prev.max,
     reverse: val.reverse ?? prev.reverse,
     offset: val.offset ?? prev.offset ?? 0, // 补齐缺失的 offset
+    thrust_mode: val.thrust_mode ?? prev.thrust_mode,
     xbox_input_key: val.xbox_input_key ?? prev.xbox_input_key,
   };
 
@@ -343,6 +354,11 @@ onMounted(() => {
 </style>
 
 <style scoped>
+p>span {
+  font-size: 0.9em;
+  color: var(--td-text-color-secondary);
+}
+
 .disconnect-dialog {
   pointer-events: auto;
 }

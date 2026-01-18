@@ -4,23 +4,26 @@ export type ChannelSetting = {
     id: number;
     name: string;
     min: number;
-    center: number;
     max: number;
-    reverse: boolean;
+    center: number;
     offset: number;
+    reverse: boolean;
+    thrust_mode: number;
     xbox_input_key: number;
 };
 
 export type configData = {
-    radio_mode: number;
-    channel_settings: ChannelSetting[];
+    radio_mode: number; // 无线电链路模式
+    wifi_lr_mode: number, // ESP Wifi长短距离模式
+    h_bridge_drv: number, // 启动H桥驱动模式
+    channel_settings: ChannelSetting[]; // 通道设置
 };
 
 export type receiverInfo = {
     rssi_ground: number;
     rssi_air: number;
     battery_voltage: number;
-    firmware_version: string;
+    battery_cell: number;
     channel_outputs: [number, number, number, number];
 };
 
@@ -55,8 +58,7 @@ export enum XBOX_INPUT {
     btnDirRight,
     btnDirDown,
     btnDirLeft,
-    XBOX_BUTTON_MAX, // max value
-    joyLHori = XBOX_BUTTON_MAX + 1,
+    joyLHori,
     joyLVert,
     joyRHori,
     joyRVert,
